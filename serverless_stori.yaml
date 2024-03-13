@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation template for thumbnail generator.
+Resources:
+
+  BucketThumbnail:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: bucket-thumbnail-stori
+      AccessControl: Private
+      DeletionPolicy: Delete
+
+  Lambdathumbnail:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: lambda-thumbnail
+      Description: Lambda function cloud formation for thumbnail generator
+      Runtime: python3.9
+      Timeout: 25
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/funcion_gen_imagenes
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import os
+          import boto3
+          from PIL import Image
+
+          def lambda_handler(event, context):
+              # Obtener información del evento S3
+              record = event['Records'][0]
+              bucket_name = record['s3']['bucket']['name']
+              key = record['s3']['object']['key']
+
+              # Configurar el cliente de S3
+              s3 = boto3.client('s3')
+
+              # Descargar la imagen original desde S3
+              imagen_original = Image.open(s3.get_object(Bucket=bucket_name, Key=key)['Body'])
+
+              # Definir el tamaño de la miniatura
+              tamano_miniatura = (100, 100)
+
+              # Generar la miniatura
+              miniatura = imagen_original.resize(tamano_miniatura)
+
+              # Obtener la ruta de la imagen miniatura en S3
+              nombre_miniatura = f"miniatura_{os.path.basename(key)}"
+              ruta_miniatura = f"{bucket_name}/{nombre_miniatura}"
+
+              # Guardar la miniatura en S3
+              with BytesIO() as output:
+                  miniatura.save(output, format='JPEG')
+                  output.seek(0)
+                  s3.put_object(Body=output, Bucket=bucket_name, Key=nombre_miniatura)
+
+              print(f"Miniatura generada y guardada en: s3://{ruta_miniatura}")
+
+              return {
+                  'statusCode': 200,
+                  'body': 'Miniatura generada exitosamente.'
+              }
+      DeletionPolicy: Delete
